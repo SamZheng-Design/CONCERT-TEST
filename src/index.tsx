@@ -1364,14 +1364,20 @@ app.get('/', (c) => {
                 </div>
             \`;
 
-            // Calculate returns
+            // 【收入分成模式】计算收益
             const shareRatio = inv.senior.shareRatio / 100;
-            const availableForDistribution = totals.netProfit;
-            const seniorPayout = Math.min(seniorTarget, availableForDistribution * shareRatio);
-            const remainingProfit = availableForDistribution - seniorPayout;
-            const juniorPayout = remainingProfit > 0 ? remainingProfit : 0;
+            
+            // 100%售票率时的票房收入
+            const ticketRevenue = totals.netTicketRevenue;
+            
+            // 优先级分成：直接从票房收入中按比例分成（不承担费用）
+            const seniorPayout = Math.min(seniorTarget, ticketRevenue * shareRatio);
+            
+            // 劣后级收入：票房收入 - 优先级分成 + 赞助收入 - 总成本
+            const juniorIncome = ticketRevenue - seniorPayout + totals.netSponsorship - totals.totalCosts;
+            
             const seniorROI = ((seniorPayout / inv.senior.amount) - 1) * 100;
-            const juniorROI = inv.junior.amount > 0 ? ((juniorPayout / inv.junior.amount)) * 100 : 0;
+            const juniorROI = inv.junior.amount > 0 ? (juniorIncome / inv.junior.amount * 100) : 0;
 
             document.getElementById('investor-cards').innerHTML = \`
                 <div class="investor-card senior">
@@ -1419,12 +1425,12 @@ app.get('/', (c) => {
                             <span class="summary-value">\${formatCurrency(inv.junior.amount)}</span>
                         </div>
                         <div class="summary-row">
-                            <span class="summary-label">剩余可分配利润</span>
-                            <span class="summary-value">\${formatCurrency(remainingProfit)}</span>
+                            <span class="summary-label">剩余可分配利润 <span class="text-gray-400">(100%售票)</span></span>
+                            <span class="summary-value">\${formatCurrency(ticketRevenue - seniorPayout)}</span>
                         </div>
                         <div class="summary-row">
                             <span class="summary-label">劣后级净收益 <span class="text-gray-400">(100%售票)</span></span>
-                            <span class="summary-value \${juniorPayout >= 0 ? 'text-green-600' : 'text-red-600'}">\${formatCurrency(juniorPayout)}</span>
+                            <span class="summary-value \${juniorIncome >= 0 ? 'text-green-600' : 'text-red-600'}">\${formatCurrency(juniorIncome)}</span>
                         </div>
                         <div class="summary-row" style="border-top: 2px solid #22c55e; padding-top: 12px; margin-top: 8px;">
                             <span class="summary-label">收益率 <span class="text-gray-400">(100%售票)</span></span>
@@ -1441,23 +1447,30 @@ app.get('/', (c) => {
             const totals = calculateTotals();
             const seniorTarget = inv.senior.amount * inv.senior.multiplier;
             
-            // Calculate breakeven point for senior
+            // 优先级是【收入分成】模式，不是利润分成！
+            // 优先级直接从票房收入中按比例分成，不承担费用
             const shareRatio = inv.senior.shareRatio / 100;
-            // At what ticket sale rate does senior get full payout?
-            // netTicketRevenue * rate + netSponsorship - totalCosts = seniorTarget / shareRatio
-            // Actually: (netTicketRevenue * rate + netSponsorship - totalCosts) * shareRatio = seniorTarget
-            const netRevenueAt100 = totals.netTicketRevenue;
-            const fixedIncome = totals.netSponsorship;
-            const costs = totals.totalCosts;
             
-            // Solve for rate where: (netRevenueAt100 * rate + fixedIncome - costs) * shareRatio >= seniorTarget
-            // rate = (seniorTarget / shareRatio + costs - fixedIncome) / netRevenueAt100
-            let seniorBreakeven = shareRatio > 0 ? ((seniorTarget / shareRatio + costs - fixedIncome) / netRevenueAt100) : 1;
+            // 优先级退出平衡点计算：
+            // 票房收入 * 分成比例 = 退出目标
+            // 即：票房收入 = 退出目标 / 分成比例
+            // 售票率 = 需要的票房收入 / 100%售票率的票房收入
+            const ticketRevenueNeeded = shareRatio > 0 ? (seniorTarget / shareRatio) : Infinity;
+            let seniorBreakeven = ticketRevenueNeeded / totals.netTicketRevenue;
             seniorBreakeven = Math.max(0, Math.min(1, seniorBreakeven));
             
-            // Junior breakeven: when net profit >= 0
-            // netRevenueAt100 * rate + fixedIncome - costs >= 0
-            const juniorBreakeven = (costs - fixedIncome) / netRevenueAt100;
+            // 劣后级盈亏平衡点：
+            // 劣后级收入 = 票房收入 * (1 - 分成比例) + 赞助收入 - 总成本 >= 0
+            // 票房收入 * (1 - 分成比例) >= 总成本 - 赞助收入
+            // 如果分成比例100%，劣后级需要赞助收入 >= 总成本才能不亏
+            const juniorShareRatio = 1 - shareRatio;
+            let juniorBreakeven;
+            if (juniorShareRatio > 0) {
+                juniorBreakeven = (totals.totalCosts - totals.netSponsorship) / (totals.netTicketRevenue * juniorShareRatio);
+            } else {
+                // 100%分成给优先级时，劣后级只靠赞助收入
+                juniorBreakeven = totals.netSponsorship >= totals.totalCosts ? 0 : Infinity;
+            }
             
             content.innerHTML = \`
                 <div class="flex justify-between items-center mb-4">
@@ -1502,9 +1515,10 @@ app.get('/', (c) => {
                 
                 <div class="analysis-info">
                     <i class="fas fa-info-circle"></i>
-                    <strong>解读：</strong>当售票率达到 <strong>\${(seniorBreakeven * 100).toFixed(1)}%</strong> 时，
-                    优先级可获得封顶金额 <strong>\${formatCurrency(seniorTarget)}</strong> 并退出。
-                    售票率继续提高，优先级收益不再增加（已封顶），超额收益归劣后级。
+                    <strong>解读：</strong>优先级直接从票房收入中分成\${inv.senior.shareRatio}%，不承担费用。
+                    当售票率达到 <strong>\${(seniorBreakeven * 100).toFixed(1)}%</strong> 时（票房收入约 <strong>\${formatWan(ticketRevenueNeeded)}</strong>），
+                    优先级累计分成达到封顶金额 <strong>\${formatCurrency(seniorTarget)}</strong> 并退出。
+                    超出部分的票房收入归劣后级。
                 </div>
             \`;
             
@@ -1540,14 +1554,15 @@ app.get('/', (c) => {
                 const r = rate / 100;
                 labels.push((r * 100).toFixed(0) + '%');
                 
-                // Net revenue at this rate (profit after costs)
-                const netRevenue = totals.netTicketRevenue * r + totals.netSponsorship - totals.totalCosts;
-                const seniorPayout = Math.min(seniorTarget, Math.max(0, netRevenue * shareRatio));
+                // 票房收入 at this rate
+                const ticketRevenue = totals.netTicketRevenue * r;
+                
+                // 优先级分成：直接从票房收入中按比例分成（收入分成模式，不是利润分成）
+                // 优先级累计分成 = 票房收入 * 分成比例，但不超过封顶金额
+                const seniorPayout = Math.min(seniorTarget, ticketRevenue * shareRatio);
                 
                 seniorData.push(seniorPayout / 10000);
-                // FIXED: Net ticket revenue should increase with ticket rate
-                // This is gross ticket revenue * rate * (1 - commission rate)
-                revenueData.push((totals.netTicketRevenue * r) / 10000);
+                revenueData.push(ticketRevenue / 10000);
                 targetLine.push(seniorTarget / 10000);
             }
             
@@ -1660,7 +1675,9 @@ app.get('/', (c) => {
             const seniorTarget = inv.senior.amount * inv.senior.multiplier;
             const totals = calculateTotals();
             const shareRatio = inv.senior.shareRatio / 100;
-            const seniorBreakeven = shareRatio > 0 ? ((seniorTarget / shareRatio + totals.totalCosts - totals.netSponsorship) / totals.netTicketRevenue) : 1;
+            // 优先级退出平衡点：票房收入 * 分成比例 = 退出目标
+            const ticketRevenueNeeded = shareRatio > 0 ? (seniorTarget / shareRatio) : Infinity;
+            const seniorBreakeven = ticketRevenueNeeded / totals.netTicketRevenue;
             drawStressChart(seniorTarget, Math.max(0, Math.min(1, seniorBreakeven)));
         }
 
@@ -1680,12 +1697,31 @@ app.get('/', (c) => {
             const inv = appData.investment;
             const totals = calculateTotals();
             const seniorTarget = inv.senior.amount * inv.senior.multiplier;
+            const shareRatio = inv.senior.shareRatio / 100;
             
-            // Junior breakeven: when net profit after senior payout >= 0
-            // At 100% sales, profit = netTicketRevenue + netSponsorship - totalCosts
-            // Junior gets profit after senior takes their share
-            // For junior to break even: profit - seniorTarget >= 0 (when senior is capped)
-            const juniorBreakeven = (totals.totalCosts + seniorTarget - totals.netSponsorship) / totals.netTicketRevenue;
+            // 劣后级收益计算（收入分成模式）：
+            // 劣后级收入 = 票房收入 * (1 - 分成比例) + 赞助收入 - 总成本 - 优先级封顶金额（如果优先级已达封顶）
+            // 
+            // 更准确地说：
+            // - 优先级分成 = min(票房收入 * 分成比例, 封顶金额)
+            // - 劣后级收入 = 票房收入 - 优先级分成 + 赞助收入 - 总成本
+            //
+            // 劣后级盈亏平衡点：劣后级收入 >= 0
+            // 票房收入 - min(票房收入 * 分成比例, 封顶) + 赞助 - 成本 >= 0
+            
+            // 简化计算：假设优先级未封顶时
+            // 票房 * (1 - 分成比例) + 赞助 - 成本 >= 0
+            // 票房 >= (成本 - 赞助) / (1 - 分成比例)
+            const juniorShareRatio = 1 - shareRatio;
+            let juniorBreakeven;
+            if (juniorShareRatio > 0) {
+                juniorBreakeven = (totals.totalCosts - totals.netSponsorship) / (totals.netTicketRevenue * juniorShareRatio);
+            } else {
+                // 100%分成给优先级时，劣后级只能等优先级封顶后才有收入
+                // 需要的票房 = 封顶金额 / 分成比例 + (成本 - 赞助)
+                juniorBreakeven = (seniorTarget / shareRatio + totals.totalCosts - totals.netSponsorship) / totals.netTicketRevenue;
+            }
+            juniorBreakeven = Math.max(0, Math.min(2, juniorBreakeven)); // 允许超过100%来显示不可能盈利的情况
             
             content.innerHTML = \`
                 <div class="flex justify-between items-center mb-4">
@@ -1703,8 +1739,11 @@ app.get('/', (c) => {
                 
                 <div class="analysis-info" style="background: #dcfce7; border-color: #22c55e; color: #166534;">
                     <i class="fas fa-info-circle"></i>
-                    <strong>解读：</strong>当售票率达到 <strong>\${(juniorBreakeven * 100).toFixed(1)}%</strong> 时，
-                    劣后级开始盈利。售票率越高，劣后级收益越大。
+                    <strong>解读：</strong>劣后级承担所有费用（¥\${formatNumber(totals.totalCosts)}），
+                    收入来源 = 票房收入 × \${((1 - shareRatio) * 100).toFixed(0)}% + 赞助收入（¥\${formatNumber(totals.netSponsorship)}）。
+                    \${juniorBreakeven <= 1 ? 
+                        '当售票率达到 <strong>' + (juniorBreakeven * 100).toFixed(1) + '%</strong> 时，劣后级开始盈利。' : 
+                        '<strong style="color: #dc2626;">在当前分成比例下，即使100%售票也无法盈利。</strong>'}
                 </div>
             \`;
             
@@ -1732,9 +1771,14 @@ app.get('/', (c) => {
                 const r = rate / 100;
                 labels.push(rate + '%');
                 
-                const netRevenue = totals.netTicketRevenue * r + totals.netSponsorship - totals.totalCosts;
-                const seniorPayout = Math.min(seniorTarget, Math.max(0, netRevenue * shareRatio));
-                const juniorProfit = netRevenue - seniorPayout;
+                // 票房收入
+                const ticketRevenue = totals.netTicketRevenue * r;
+                
+                // 优先级分成（收入分成模式）
+                const seniorPayout = Math.min(seniorTarget, ticketRevenue * shareRatio);
+                
+                // 劣后级收入 = 票房收入 - 优先级分成 + 赞助收入 - 总成本
+                const juniorProfit = ticketRevenue - seniorPayout + totals.netSponsorship - totals.totalCosts;
                 
                 juniorProfitData.push(juniorProfit / 10000);
                 juniorROIData.push((juniorProfit / inv.junior.amount) * 100);
