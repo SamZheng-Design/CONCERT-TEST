@@ -1535,16 +1535,19 @@ app.get('/', (c) => {
             
             const step = Math.max(1, Math.floor((maxRate - minRate) * 100 / 20));
             
+            // Generate data from HIGH to LOW ticket rate (100% -> 0%)
             for (let rate = maxRate * 100; rate >= minRate * 100; rate -= step) {
                 const r = rate / 100;
                 labels.push((r * 100).toFixed(0) + '%');
                 
-                // Net revenue at this rate
+                // Net revenue at this rate (profit after costs)
                 const netRevenue = totals.netTicketRevenue * r + totals.netSponsorship - totals.totalCosts;
                 const seniorPayout = Math.min(seniorTarget, Math.max(0, netRevenue * shareRatio));
                 
                 seniorData.push(seniorPayout / 10000);
-                revenueData.push((totals.netTicketRevenue * r * (1 - appData.ticketCommissionRate / (1 - appData.ticketCommissionRate))) / 10000);
+                // FIXED: Net ticket revenue should increase with ticket rate
+                // This is gross ticket revenue * rate * (1 - commission rate)
+                revenueData.push((totals.netTicketRevenue * r) / 10000);
                 targetLine.push(seniorTarget / 10000);
             }
             
@@ -1580,7 +1583,7 @@ app.get('/', (c) => {
                         },
                         {
                             label: '净票房收入 (万元)',
-                            data: showRevenue ? revenueData.map((v, i) => totals.netTicketRevenue * (1 - parseInt(labels[i]) / 100) / 10000) : [],
+                            data: showRevenue ? revenueData : [],
                             borderColor: '#22c55e',
                             backgroundColor: 'rgba(34, 197, 94, 0.1)',
                             fill: true,
