@@ -1515,10 +1515,11 @@ app.get('/', (c) => {
                 
                 <div class="analysis-info">
                     <i class="fas fa-info-circle"></i>
-                    <strong>解读：</strong>优先级直接从票房收入中分成\${inv.senior.shareRatio}%，不承担费用。
-                    当售票率达到 <strong>\${(seniorBreakeven * 100).toFixed(1)}%</strong> 时（票房收入约 <strong>\${formatWan(ticketRevenueNeeded)}</strong>），
-                    优先级累计分成达到封顶金额 <strong>\${formatCurrency(seniorTarget)}</strong> 并退出。
-                    超出部分的票房收入归劣后级。
+                    <strong>【收入分成模式】解读：</strong><br>
+                    • 优先级投资 <strong>\${formatCurrency(inv.senior.amount)}</strong>，直接从票房收入中分成 <strong>\${inv.senior.shareRatio}%</strong>，<strong>不承担任何费用</strong>。<br>
+                    • 当分成比例为100%时，售票率5%对应的票房收入（约\${formatWan(totals.netTicketRevenue * 0.05)}）将全部作为优先级分成。<br>
+                    • 优先级退出平衡点：售票率达到 <strong>\${(seniorBreakeven * 100).toFixed(1)}%</strong> 时（票房收入约 <strong>\${formatWan(ticketRevenueNeeded)}</strong>），优先级累计分成达到封顶金额 <strong>\${formatCurrency(seniorTarget)}</strong> 并完成退出。<br>
+                    • 超出退出目标的票房收入部分，归劣后级所有。
                 </div>
             \`;
             
@@ -1549,16 +1550,17 @@ app.get('/', (c) => {
             
             const step = Math.max(1, Math.floor((maxRate - minRate) * 100 / 20));
             
-            // Generate data from HIGH to LOW ticket rate (100% -> 0%)
-            for (let rate = maxRate * 100; rate >= minRate * 100; rate -= step) {
+            // Generate data from LOW to HIGH ticket rate (0% -> 100%) for more intuitive visualization
+            for (let rate = minRate * 100; rate <= maxRate * 100; rate += step) {
                 const r = rate / 100;
                 labels.push((r * 100).toFixed(0) + '%');
                 
-                // 票房收入 at this rate
+                // 票房收入 at this rate (净票房收入 = 100%售票率的净票房 * 当前售票率)
                 const ticketRevenue = totals.netTicketRevenue * r;
                 
                 // 优先级分成：直接从票房收入中按比例分成（收入分成模式，不是利润分成）
                 // 优先级累计分成 = 票房收入 * 分成比例，但不超过封顶金额
+                // 例：100%分成比例时，5%售票率的票房收入全部归优先级（直到达到封顶）
                 const seniorPayout = Math.min(seniorTarget, ticketRevenue * shareRatio);
                 
                 seniorData.push(seniorPayout / 10000);
@@ -1617,7 +1619,7 @@ app.get('/', (c) => {
                     plugins: {
                         title: {
                             display: true,
-                            text: '优先级退出分析 vs 售票率',
+                            text: '优先级退出分析 vs 售票率 (收入分成模式)',
                             font: { size: 16 }
                         },
                         tooltip: {
@@ -1626,31 +1628,14 @@ app.get('/', (c) => {
                                     return context.dataset.label + ': ¥' + context.parsed.y.toFixed(0) + '万';
                                 }
                             }
-                        },
-                        annotation: {
-                            annotations: {
-                                breakeven: {
-                                    type: 'line',
-                                    xMin: labels.findIndex(l => parseFloat(l) <= seniorBreakeven * 100),
-                                    xMax: labels.findIndex(l => parseFloat(l) <= seniorBreakeven * 100),
-                                    borderColor: '#ef4444',
-                                    borderWidth: 2,
-                                    label: {
-                                        display: true,
-                                        content: '退出点 ' + (seniorBreakeven * 100).toFixed(1) + '%',
-                                        position: 'start'
-                                    }
-                                }
-                            }
                         }
                     },
                     scales: {
                         x: {
                             title: {
                                 display: true,
-                                text: '售票率 (从高到低 →)'
-                            },
-                            reverse: false
+                                text: '售票率 (← 低 | 高 →)'
+                            }
                         },
                         y: {
                             title: {
@@ -1767,17 +1752,19 @@ app.get('/', (c) => {
             const juniorProfitData = [];
             const juniorROIData = [];
             
-            for (let rate = 100; rate >= 0; rate -= 5) {
+            // Generate data from LOW to HIGH ticket rate (0% -> 100%) for more intuitive visualization
+            for (let rate = 0; rate <= 100; rate += 5) {
                 const r = rate / 100;
                 labels.push(rate + '%');
                 
-                // 票房收入
+                // 票房收入 (净票房 = 100%售票率的净票房 * 当前售票率)
                 const ticketRevenue = totals.netTicketRevenue * r;
                 
-                // 优先级分成（收入分成模式）
+                // 优先级分成（收入分成模式）- 直接从票房收入中分成
                 const seniorPayout = Math.min(seniorTarget, ticketRevenue * shareRatio);
                 
                 // 劣后级收入 = 票房收入 - 优先级分成 + 赞助收入 - 总成本
+                // 劣后级承担所有费用，优先级不承担费用
                 const juniorProfit = ticketRevenue - seniorPayout + totals.netSponsorship - totals.totalCosts;
                 
                 juniorProfitData.push(juniorProfit / 10000);
@@ -1835,7 +1822,7 @@ app.get('/', (c) => {
                     plugins: {
                         title: {
                             display: true,
-                            text: '劣后级盈亏分析 vs 售票率',
+                            text: '劣后级盈亏分析 vs 售票率 (承担全部费用)',
                             font: { size: 16 }
                         }
                     },
@@ -1843,7 +1830,7 @@ app.get('/', (c) => {
                         x: {
                             title: {
                                 display: true,
-                                text: '售票率'
+                                text: '售票率 (← 低 | 高 →)'
                             }
                         },
                         y: {
