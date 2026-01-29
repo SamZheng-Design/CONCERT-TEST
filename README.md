@@ -1,21 +1,155 @@
-```txt
-npm install
-npm run dev
+# Cardi B 深圳演唱会项目测算系统
+
+## 项目概述
+- **名称**: Cardi B 演唱会项目测算
+- **目标**: 为演唱会项目提供专业级财务预测与投资分析
+- **技术栈**: Hono + TypeScript + TailwindCSS + Chart.js
+
+## 公开访问地址
+- **预览**: https://3000-itnaxpxgaxt0x82pql0g6-02b9cc79.sandbox.novita.ai
+
+## 已完成功能
+
+### 1. 顶部概览面板
+- 总可售票数统计
+- 总票房收入 (RMB)
+- 总成本 (RMB)
+- 预计净利润 (RMB)
+- 实时计算，随数据变化自动更新
+
+### 2. 票务区域设置 Ticket Sections
+- 多场地支持（可添加/删除场地）
+- 场次管理（可调整每个场地的演出场次）
+- 区域编辑（票价、容量、区域名称均可编辑）
+- 单场收入/总收入自动计算
+- 所有场地总计统计
+- 饼图可视化（点击"图表"按钮）
+
+### 3. 成本结构 Cost Structure
+- 6大费用分类：
+  - 艺人费用 Artist Fee (¥52,710,400)
+  - 差旅费用 T&E (¥1,543,000)
+  - 制作费用 Production (¥5,350,000)
+  - 场地费用 Venue (¥7,511,678)
+  - 营销推广 Marketing (¥2,000,000)
+  - 行政管理 Admin (¥2,904,000)
+- 点击展开查看二级明细
+- 每项费用支持编辑（单价、数量）
+- 可添加/删除费用项目
+- 自动汇总计算
+- 环形图可视化
+
+### 4. 赞助收入 Sponsorship
+- 3类赞助类型：
+  - 冠名赞助 Title Sponsor
+  - 文化局补贴 MOC Subsidy (¥10,000,000)
+  - 指定赞助 Official Sponsor (¥12,000,000)
+- 可调整佣金率 (默认10%)
+- 净赞助收入自动计算
+- 占总收入比例统计
+- 可添加新赞助商
+
+### 5. 投资人分成模型
+- 投资结构可视化（优先级/劣后级比例条）
+- 优先级 (Senior) 配置：
+  - 投资金额 (¥20,000,000)
+  - 收益倍数 (1.11x)
+  - 分成比例 (可调整0-100%)
+  - 退出目标金额 (¥22,200,000)
+- 劣后级 (Junior) 显示：
+  - 投资金额 (¥30,000,000)
+  - 剩余可分配利润
+  - 净收益计算
+  - 收益率统计
+- 配置投资结构弹窗
+
+### 6. 压力测试 Stress Test
+- **优先级退出分析**:
+  - 退出目标与退出平衡点显示
+  - 售票率范围滑块（可聚焦特定范围）
+  - 优先级累计分成曲线（封顶显示）
+  - 净票房收入曲线
+  - 退出目标参考线
+  - 图表交互（hover显示详细数据）
+  - 动态解读说明
+- **劣后级盈亏分析**:
+  - 盈亏平衡点标注
+  - 劣后级净收益曲线
+  - 收益率曲线（双Y轴）
+  - 盈亏平衡参考线
+
+### 7. 数据管理
+- 导出数据 (JSON格式)
+- 保存到本地存储
+- 页面刷新自动恢复数据
+
+## 数据架构
+
+### 数据模型
+```javascript
+{
+  venues: [{ // 场地列表
+    id, name, shows, // 场地信息
+    sections: [{ // 票务区域
+      id, name, price, capacity, revenue
+    }]
+  }],
+  costs: { // 成本结构 (6大类)
+    artist, travel, production, venue, marketing, admin
+  },
+  sponsors: [{ // 赞助商列表
+    id, name, icon, amount
+  }],
+  investment: { // 投资结构
+    total, senior: {amount, multiplier, shareRatio}, junior: {amount}
+  }
+}
 ```
 
-```txt
+### 存储服务
+- 本地存储 (localStorage) - 用于数据持久化
+- 可扩展至 Cloudflare D1/KV
+
+## 用户指南
+
+### 基本操作
+1. **编辑数据**: 直接点击数字输入框进行修改
+2. **添加项目**: 点击绿色"+"按钮
+3. **删除项目**: 点击项目右侧的"×"按钮
+4. **展开明细**: 点击成本分类标题栏
+5. **查看图表**: 点击各模块的"图表"按钮
+6. **调整投资结构**: 点击"配置投资结构"按钮
+7. **压力测试**: 使用滑块调整售票率范围，切换分析标签页
+
+### 数据保存
+- 点击右上角"保存"按钮保存到本地
+- 点击"导出数据"下载JSON文件备份
+
+## 部署信息
+- **平台**: Cloudflare Pages
+- **状态**: ✅ 运行中
+- **技术栈**: Hono + TypeScript + TailwindCSS + Chart.js
+- **最后更新**: 2026-01-29
+
+## 开发命令
+
+```bash
+# 安装依赖
+npm install
+
+# 本地开发
+npm run build && pm2 start ecosystem.config.cjs
+
+# 构建
+npm run build
+
+# 部署
 npm run deploy
 ```
 
-[For generating/synchronizing types based on your Worker configuration run](https://developers.cloudflare.com/workers/wrangler/commands/#types):
-
-```txt
-npm run cf-typegen
-```
-
-Pass the `CloudflareBindings` as generics when instantiation `Hono`:
-
-```ts
-// src/index.ts
-const app = new Hono<{ Bindings: CloudflareBindings }>()
-```
+## 待开发功能
+- [ ] 资金时间轴模块 (T0基准，T+N付款标记)
+- [ ] 数据导入功能 (从Excel导入)
+- [ ] 多项目对比分析
+- [ ] PDF报告导出
+- [ ] 云端数据同步 (Cloudflare D1)
